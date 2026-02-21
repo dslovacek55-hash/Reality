@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: realestate
+      POSTGRES_USER: tracker
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracker -d realestate"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://tracker:${DB_PASSWORD:-changeme}@postgres:5432/realestate
+      DATABASE_URL_SYNC: postgresql://tracker:${DB_PASSWORD:-changeme}@postgres:5432/realestate
+      REDIS_URL: redis://redis:6379/0
+      SREALITY_INTERVAL_MINUTES: ${SREALITY_INTERVAL_MINUTES:-30}
+      BAZOS_INTERVAL_MINUTES: ${BAZOS_INTERVAL_MINUTES:-60}
+      BEZREALITKY_INTERVAL_MINUTES: ${BEZREALITKY_INTERVAL_MINUTES:-120}
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  telegram-bot:
+    build: ./bot
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      DATABASE_URL: postgresql+asyncpg://tracker:${DB_PASSWORD:-changeme}@postgres:5432/realestate
+      REDIS_URL: redis://redis:6379/0
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+
+volumes:
+  postgres_data:
+  redis_data:

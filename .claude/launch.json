@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "C:\\Users\\dslov\\Reality\\node-v20.18.1-win-x64\\npx.cmd",
+      "runtimeArgs": ["next", "dev"],
+      "port": 3000,
+      "cwd": "C:\\Users\\dslov\\Reality\\frontend"
+    }
+  ]
+}
