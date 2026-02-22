@@ -3,11 +3,17 @@
   "configurations": [
     {
       "name": "frontend",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["node_modules/next/dist/bin/next", "dev"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
       "port": 3000,
-      "autoPort": true,
-      "cwd": "C:/Users/dslov/Reality/.claude/worktrees/stupefied-hamilton/frontend"
+      "cwd": "frontend"
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "uvicorn",
+      "runtimeArgs": ["app.main:app", "--reload", "--host", "127.0.0.1", "--port", "8000"],
+      "port": 8000,
+      "cwd": "backend"
     }
   ]
 }

@@ -134,8 +134,13 @@ async def get_map_markers(
     property_type: str | None = None,
     transaction_type: str | None = None,
     city: str | None = None,
+    disposition: str | None = None,
     price_min: float | None = None,
     price_max: float | None = None,
+    size_min: float | None = None,
+    size_max: float | None = None,
+    source: str | None = None,
+    search: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Return minimal property data for map markers."""
@@ -161,10 +166,25 @@ async def get_map_markers(
     if city:
         escaped = escape_like(city)
         query = query.where(Property.city.ilike(f"%{escaped}%", escape="\\"))
+    if disposition:
+        dispositions = [d.strip() for d in disposition.split(",")]
+        query = query.where(Property.disposition.in_(dispositions))
     if price_min is not None:
         query = query.where(Property.price >= price_min)
     if price_max is not None:
         query = query.where(Property.price <= price_max)
+    if size_min is not None:
+        query = query.where(Property.size_m2 >= size_min)
+    if size_max is not None:
+        query = query.where(Property.size_m2 <= size_max)
+    if source:
+        if source in VALID_SOURCES:
+            query = query.where(Property.source == source)
+    if search:
+        search_stripped = search.strip()
+        if search_stripped:
+            ts_query = func.plainto_tsquery("simple", search_stripped)
+            query = query.where(Property.search_vector.op("@@")(ts_query))
 
     query = query.limit(2000)
     result = await db.execute(query)

@@ -40,16 +40,44 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         )
     ).scalar() or 0
 
-    # Price drops today (from price_history)
+    # Price drops today: count properties where today's price_history entry
+    # is lower than the previous entry (actual price decrease, not just any change)
+    prev_price = (
+        select(
+            PriceHistory.property_id,
+            PriceHistory.price,
+            func.row_number().over(
+                partition_by=PriceHistory.property_id,
+                order_by=PriceHistory.recorded_at.desc(),
+            ).label("rn"),
+        )
+        .where(PriceHistory.recorded_at < today_start)
+        .subquery()
+    )
+    latest_prev = (
+        select(prev_price.c.property_id, prev_price.c.price)
+        .where(prev_price.c.rn == 1)
+        .subquery()
+    )
+    today_price = (
+        select(
+            PriceHistory.property_id,
+            func.min(PriceHistory.price).label("price"),
+        )
+        .where(PriceHistory.recorded_at >= today_start)
+        .group_by(PriceHistory.property_id)
+        .subquery()
+    )
     price_drops_today = (
         await db.execute(
-            select(func.count(func.distinct(PriceHistory.property_id))).where(
-                PriceHistory.recorded_at >= today_start
-            )
+            select(func.count()).select_from(
+                today_price.join(
+                    latest_prev,
+                    today_price.c.property_id == latest_prev.c.property_id,
+                )
+            ).where(today_price.c.price < latest_prev.c.price)
         )
     ).scalar() or 0
-    # Subtract new listings (they also get initial price_history entry)
-    price_drops_today = max(0, price_drops_today - new_today)
 
     # Removed today
     removed_today = (
