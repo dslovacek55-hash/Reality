@@ -108,3 +108,43 @@ class UserFilterUpdate(BaseModel):
     notify_price_drop: bool | None = None
     price_drop_threshold: float | None = None
     active: bool | None = None
+
+
+class FavoriteCreate(BaseModel):
+    session_id: str
+    property_id: int
+
+
+class FavoriteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    session_id: str
+    property_id: int
+    created_at: datetime
+
+
+class FavoriteWithProperty(FavoriteResponse):
+    property: PropertyResponse
+
+
+class EmailSubscriptionCreate(BaseModel):
+    email: str
+    property_type: str | None = None
+    transaction_type: str | None = None
+    city: str | None = None
+    disposition: str | None = None
+    price_min: float | None = None
+    price_max: float | None = None
+    size_min: float | None = None
+    size_max: float | None = None
+    notify_new: bool = True
+    notify_price_drop: bool = True
+
+
+class EmailSubscriptionResponse(EmailSubscriptionCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    active: bool
+    created_at: datetime

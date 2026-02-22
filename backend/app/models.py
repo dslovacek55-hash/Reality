@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Column,
     DateTime,
     ForeignKey,
     Index,
@@ -13,7 +14,8 @@ from sqlalchemy import (
     UniqueConstraint,
     Float,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from geoalchemy2 import Geometry
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -38,6 +40,8 @@ class Property(Base):
     rooms: Mapped[int | None] = mapped_column(Integer)
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
+    ku_kod: Mapped[int | None] = mapped_column(Integer)
+    ku_nazev: Mapped[str | None] = mapped_column(String(200))
     city: Mapped[str | None] = mapped_column(String(200))
     district: Mapped[str | None] = mapped_column(String(200))
     address: Mapped[str | None] = mapped_column(Text)
@@ -60,8 +64,12 @@ class Property(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    search_vector = Column(TSVECTOR)
 
     price_history: Mapped[list["PriceHistory"]] = relationship(
+        back_populates="property", cascade="all, delete-orphan"
+    )
+    favorites: Mapped[list["Favorite"]] = relationship(
         back_populates="property", cascade="all, delete-orphan"
     )
 
@@ -145,3 +153,93 @@ class ScrapeRun(Base):
     listings_new: Mapped[int] = mapped_column(Integer, default=0)
     listings_updated: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="running")
+
+
+class Favorite(Base):
+    __tablename__ = "favorites"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    property_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    property: Mapped["Property"] = relationship(back_populates="favorites")
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "property_id", name="uq_favorite"),
+    )
+
+
+class EmailSubscription(Base):
+    __tablename__ = "email_subscriptions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    property_type: Mapped[str | None] = mapped_column(String(30))
+    transaction_type: Mapped[str | None] = mapped_column(String(20))
+    city: Mapped[str | None] = mapped_column(String(200))
+    disposition: Mapped[str | None] = mapped_column(Text)
+    price_min: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    price_max: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    size_min: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    size_max: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    notify_new: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_price_drop: Mapped[bool] = mapped_column(Boolean, default=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class PragueKU(Base):
+    __tablename__ = "prague_ku"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ku_kod: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    ku_nazev: Mapped[str] = mapped_column(String(200), nullable=False)
+    geom = Column(Geometry("MULTIPOLYGON", srid=4326), nullable=False)
+
+
+class KuPriceStats(Base):
+    __tablename__ = "ku_price_stats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ku_kod: Mapped[int] = mapped_column(Integer, nullable=False)
+    ku_nazev: Mapped[str] = mapped_column(String(200), nullable=False)
+    property_type: Mapped[str | None] = mapped_column(String(30))
+    transaction_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    median_price_m2: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    avg_price_m2: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    sample_count: Mapped[int] = mapped_column(Integer, default=0)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("ku_kod", "property_type", "transaction_type",
+                         name="uq_ku_price_stats"),
+    )
+
+
+class ReferenceBenchmark(Base):
+    __tablename__ = "reference_benchmarks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    region: Mapped[str] = mapped_column(String(200), nullable=False)
+    property_type: Mapped[str | None] = mapped_column(String(30))
+    transaction_type: Mapped[str | None] = mapped_column(String(20))
+    price_m2: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    period: Mapped[str | None] = mapped_column(String(20))
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("source", "region", "property_type", "transaction_type",
+                         "period", name="uq_ref_benchmark"),
+    )

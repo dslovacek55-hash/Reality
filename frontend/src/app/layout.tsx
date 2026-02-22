@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Reality Tracker | Czech Real Estate',
-  description: 'Track Czech real estate listings from Sreality, Bazos, and Bezrealitky',
+  description: 'Track Czech real estate listings from Sreality, Bezrealitky, and iDNES',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

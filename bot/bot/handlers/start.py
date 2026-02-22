@@ -11,7 +11,7 @@ router = Router()
 async def cmd_start(message: Message):
     await message.answer(
         "Vitejte v Czech Reality Trackeru!\n\n"
-        "Sleduju nemovitosti na Sreality, Bazos a Bezrealitky.\n"
+        "Sleduju nemovitosti na Sreality, Bezrealitky a iDNES.\n"
         "Nastavte si filtry a dostanete upozorneni na nove inzeraty "
         "a zmeny cen.\n\n"
         "Vyberte akci:",

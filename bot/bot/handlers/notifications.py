@@ -7,7 +7,7 @@ from aiogram import Bot
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from bot.config import bot_settings
+from bot.models import Property, UserFilter, Notification
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +53,6 @@ async def process_event(
     event: dict,
 ):
     """Match event against user filters and send notifications."""
-    from bot.main import Property, UserFilter, Notification
-
     # Get property
     prop = (
         await db.execute(select(Property).where(Property.id == property_id))

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 
 from scrapers.base import BaseScraper
 
@@ -12,6 +13,12 @@ CATEGORY_TYPE = {1: "prodej", 2: "pronajem"}
 # Reverse mappings for API params
 PROPERTY_TYPES = {"byt": 1, "dum": 2, "pozemek": 3, "komercni": 4}
 TRANSACTION_TYPES = {"prodej": 1, "pronajem": 2}
+
+SIZE_PATTERN = re.compile(r"(\d+)\s*m[²2]")
+DISPOSITIONS = [
+    "5+kk", "5+1", "4+kk", "4+1", "3+kk", "3+1",
+    "2+kk", "2+1", "1+kk", "1+1", "6+",
+]
 
 
 class SrealityScraper(BaseScraper):
@@ -46,8 +53,7 @@ class SrealityScraper(BaseScraper):
             )
 
             try:
-                resp = await self.client.get(url)
-                resp.raise_for_status()
+                resp = await self.fetch_with_retry(url)
                 data = resp.json()
             except Exception as e:
                 logger.error(f"[sreality] Error fetching page {page}: {e}")
@@ -65,11 +71,10 @@ class SrealityScraper(BaseScraper):
             result_size = data.get("result_size", 0)
             fetched = (page + 1) * per_page
             if fetched >= result_size or fetched >= 500:
-                # Limit to 500 per category to be reasonable
                 break
 
             page += 1
-            await asyncio.sleep(1.5)  # Respectful delay
+            await asyncio.sleep(1.5)
 
         logger.info(
             f"[sreality] Category main={category_main} type={category_type}: "
@@ -83,28 +88,23 @@ class SrealityScraper(BaseScraper):
         locality = seo.get("locality", "")
         name = raw.get("name", "")
 
-        # Extract GPS from gps dict
         gps = raw.get("gps", {})
         lat = gps.get("lat")
         lon = gps.get("lon")
 
-        # Price
         price = raw.get("price")
         if isinstance(price, dict):
             price = price.get("value_raw")
 
-        # Images
         images = []
         for img in raw.get("_links", {}).get("images", [])[:5]:
             href = img.get("href", "")
             if href:
                 images.append(href)
 
-        # Determine property type and transaction type
         cat_main = raw.get("_category_main_cb", 1)
         cat_type = raw.get("_category_type_cb", 1)
 
-        # Parse locality for city/district
         city = ""
         district = ""
         if locality:
@@ -138,11 +138,7 @@ class SrealityScraper(BaseScraper):
     def _extract_disposition(self, raw: dict) -> str | None:
         """Try to extract disposition from name or labels."""
         name = raw.get("name", "")
-        dispositions = [
-            "5+kk", "5+1", "4+kk", "4+1", "3+kk", "3+1",
-            "2+kk", "2+1", "1+kk", "1+1", "6+",
-        ]
-        for d in dispositions:
+        for d in DISPOSITIONS:
             if d in name:
                 return d
         return None
@@ -150,8 +146,7 @@ class SrealityScraper(BaseScraper):
     def _extract_size(self, raw: dict) -> float | None:
         """Try to extract size from name (e.g., '67 m²')."""
         name = raw.get("name", "")
-        import re
-        match = re.search(r"(\d+)\s*m[²2]", name)
+        match = SIZE_PATTERN.search(name)
         if match:
             return float(match.group(1))
         return None

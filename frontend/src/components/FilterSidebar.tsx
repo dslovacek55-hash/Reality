@@ -102,29 +102,41 @@ export default function FilterSidebar({ filters, onChange }: Props) {
           <option value="">Vsechna mesta</option>
           {cities.map((c) => (
             <option key={c.city} value={c.city}>
-              {c.city} ({c.count})
+              {c.label || c.city} ({c.count})
             </option>
           ))}
         </select>
       </div>
 
-      {/* Disposition */}
+      {/* Disposition (multi-select, backend supports CSV) */}
       <div>
         <label className="block text-xs font-medium text-gray-500 mb-1.5">Dispozice</label>
         <div className="flex flex-wrap gap-1.5">
-          {DISPOSITIONS.map((d) => (
-            <button
-              key={d}
-              onClick={() => update('disposition', filters.disposition === d ? '' : d)}
-              className={`px-2 py-1 text-xs font-medium rounded-md border transition-colors ${
-                filters.disposition === d
-                  ? 'bg-primary-50 border-primary-300 text-primary-700'
-                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {d}
-            </button>
-          ))}
+          {DISPOSITIONS.map((d) => {
+            const selected = (filters.disposition || '').split(',').filter(Boolean);
+            const isSelected = selected.includes(d);
+            return (
+              <button
+                key={d}
+                onClick={() => {
+                  let next: string[];
+                  if (isSelected) {
+                    next = selected.filter((s) => s !== d);
+                  } else {
+                    next = [...selected, d];
+                  }
+                  update('disposition', next.join(','));
+                }}
+                className={`px-2 py-1 text-xs font-medium rounded-md border transition-colors ${
+                  isSelected
+                    ? 'bg-primary-50 border-primary-300 text-primary-700'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {d}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -177,8 +189,8 @@ export default function FilterSidebar({ filters, onChange }: Props) {
           {[
             { value: '', label: 'Vse' },
             { value: 'sreality', label: 'Sreality' },
-            { value: 'bazos', label: 'Bazos' },
             { value: 'bezrealitky', label: 'Bezrealitky' },
+            { value: 'idnes', label: 'iDNES' },
           ].map(({ value, label }) => (
             <button
               key={value}

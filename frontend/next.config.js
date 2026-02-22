@@ -5,7 +5,7 @@ const nextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: '**.sreality.cz' },
       { protocol: 'https', hostname: '**.bezrealitky.cz' },
-      { protocol: 'https', hostname: '**.bazos.cz' },
+      { protocol: 'https', hostname: '**.1gr.cz' },
     ],
   },
 };

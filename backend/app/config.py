@@ -7,8 +7,16 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     sreality_interval_minutes: int = 30
-    bazos_interval_minutes: int = 60
     bezrealitky_interval_minutes: int = 120
+    idnes_interval_minutes: int = 60
+
+    # Email notifications (optional)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
 
     class Config:
         env_file = ".env"

@@ -5,32 +5,39 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import Header from '@/components/Header';
 import PriceChart from '@/components/PriceChart';
-import { getProperty } from '@/lib/api';
-import type { PropertyDetail } from '@/lib/types';
-
-const sourceColors: Record<string, string> = {
-  sreality: 'bg-blue-100 text-blue-700',
-  bazos: 'bg-yellow-100 text-yellow-700',
-  bezrealitky: 'bg-green-100 text-green-700',
-};
-
-function formatPrice(price: number | null): string {
-  if (!price) return 'Cena na dotaz';
-  return new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'CZK', maximumFractionDigits: 0 }).format(price);
-}
+import { getProperty, getAvgPriceM2 } from '@/lib/api';
+import { useFavorites } from '@/hooks/useFavorites';
+import type { PropertyDetail, AvgPriceM2 } from '@/lib/types';
+import { SOURCE_COLORS, formatPrice } from '@/lib/utils';
 
 export default function PropertyDetailPage() {
   const params = useParams();
   const [property, setProperty] = useState<PropertyDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeImg, setActiveImg] = useState(0);
+  const [cityAvg, setCityAvg] = useState<AvgPriceM2 | null>(null);
+  const { isFavorite, toggleFavorite } = useFavorites();
 
   useEffect(() => {
     const id = Number(params.id);
     if (!id) return;
 
     getProperty(id)
-      .then(setProperty)
+      .then((p) => {
+        setProperty(p);
+        // Fetch average price with disposition for finer comparison + CZSO reference
+        if (p.city) {
+          getAvgPriceM2({
+            property_type: p.property_type || undefined,
+            transaction_type: p.transaction_type || undefined,
+            disposition: p.disposition || undefined,
+          }).then((avgMap) => {
+            if (p.city && avgMap[p.city]) {
+              setCityAvg(avgMap[p.city]);
+            }
+          }).catch(() => {});
+        }
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [params.id]);
@@ -62,9 +69,24 @@ export default function PropertyDetailPage() {
     );
   }
 
-  const pricePerM2 = property.price && property.size_m2
+  const pricePerM2 = property.price && property.size_m2 && property.size_m2 > 0
     ? Math.round(property.price / property.size_m2)
     : null;
+
+  // Internal average comparison (disposition-specific preferred)
+  const internalAvg = cityAvg?.by_disposition?.avg_price_m2 || cityAvg?.avg_price_m2;
+  const internalCount = cityAvg?.by_disposition?.count || cityAvg?.count;
+  const internalLabel = cityAvg?.by_disposition ? `${property.disposition} v ${property.city}` : property.city || '';
+  let internalDiffPct: number | null = null;
+  if (pricePerM2 && internalAvg && internalAvg > 0) {
+    internalDiffPct = Math.round(((pricePerM2 - internalAvg) / internalAvg) * 100);
+  }
+
+  // CZSO reference comparison
+  let czsoDiffPct: number | null = null;
+  if (pricePerM2 && cityAvg?.czso_price_m2 && cityAvg.czso_price_m2 > 0) {
+    czsoDiffPct = Math.round(((pricePerM2 - cityAvg.czso_price_m2) / cityAvg.czso_price_m2) * 100);
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -97,6 +119,21 @@ export default function PropertyDetailPage() {
                     </svg>
                   </div>
                 )}
+                {/* Favorite button on image */}
+                <button
+                  onClick={() => toggleFavorite(property.id)}
+                  className="absolute top-3 right-3 p-2 rounded-full bg-white/80 backdrop-blur-sm hover:bg-white transition-colors shadow"
+                >
+                  <svg
+                    className={`w-6 h-6 transition-colors ${isFavorite(property.id) ? 'text-red-500 fill-red-500' : 'text-gray-400 hover:text-red-400'}`}
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    fill={isFavorite(property.id) ? 'currentColor' : 'none'}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                </button>
               </div>
               {property.images && property.images.length > 1 && (
                 <div className="flex gap-2 p-3 overflow-x-auto">
@@ -134,7 +171,7 @@ export default function PropertyDetailPage() {
             {/* Price card */}
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <div className="flex items-center gap-2 mb-3">
-                <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${sourceColors[property.source] || 'bg-gray-100 text-gray-700'}`}>
+                <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${SOURCE_COLORS[property.source] || 'bg-gray-100 text-gray-700'}`}>
                   {property.source}
                 </span>
                 <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${property.transaction_type === 'pronajem' ? 'bg-purple-100 text-purple-700' : 'bg-indigo-100 text-indigo-700'}`}>
@@ -153,9 +190,58 @@ export default function PropertyDetailPage() {
                 {formatPrice(property.price)}
               </p>
               {pricePerM2 && (
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 mb-3">
                   {new Intl.NumberFormat('cs-CZ').format(pricePerM2)} CZK/m²
                 </p>
+              )}
+
+              {/* Price comparison: internal avg */}
+              {internalDiffPct !== null && internalAvg && (
+                <div className={`rounded-lg border p-3 ${
+                  internalDiffPct < -5 ? 'text-green-700 bg-green-50 border-green-200' :
+                  internalDiffPct > 5 ? 'text-red-700 bg-red-50 border-red-200' :
+                  'text-gray-700 bg-gray-50 border-gray-200'
+                }`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    {internalDiffPct < -5 && (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                    )}
+                    {internalDiffPct > 5 && (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
+                    )}
+                    <span className="text-sm font-medium">
+                      {internalDiffPct < -5 ? `${internalDiffPct}%` : internalDiffPct > 5 ? `+${internalDiffPct}%` : 'Na prumeru'} vs. lokalita
+                    </span>
+                  </div>
+                  <p className="text-xs opacity-75">
+                    Prumer {internalLabel}: {new Intl.NumberFormat('cs-CZ').format(Math.round(internalAvg))} CZK/m²
+                    ({internalCount} nemovitosti)
+                  </p>
+                </div>
+              )}
+
+              {/* Price comparison: CZSO reference */}
+              {czsoDiffPct !== null && cityAvg?.czso_price_m2 && (
+                <div className={`rounded-lg border p-3 ${
+                  czsoDiffPct < -5 ? 'text-green-700 bg-green-50 border-green-200' :
+                  czsoDiffPct > 5 ? 'text-red-700 bg-red-50 border-red-200' :
+                  'text-gray-700 bg-gray-50 border-gray-200'
+                }`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    {czsoDiffPct < -5 && (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                    )}
+                    {czsoDiffPct > 5 && (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
+                    )}
+                    <span className="text-sm font-medium">
+                      {czsoDiffPct < -5 ? `${czsoDiffPct}%` : czsoDiffPct > 5 ? `+${czsoDiffPct}%` : 'Na prumeru'} vs. {cityAvg.czso_region}
+                    </span>
+                  </div>
+                  <p className="text-xs opacity-75">
+                    Prumer {cityAvg.czso_region}: {new Intl.NumberFormat('cs-CZ').format(cityAvg.czso_price_m2)} CZK/m²
+                  </p>
+                </div>
               )}
             </div>
 

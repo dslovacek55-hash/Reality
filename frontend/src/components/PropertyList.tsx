@@ -1,7 +1,7 @@
 'use client';
 
 import PropertyCard from './PropertyCard';
-import type { Property } from '@/lib/types';
+import type { Property, AvgPriceM2Map } from '@/lib/types';
 
 interface Props {
   properties: Property[];
@@ -10,9 +10,22 @@ interface Props {
   page: number;
   pages: number;
   onPageChange: (page: number) => void;
+  avgPrices?: AvgPriceM2Map;
+  favoriteIds?: number[];
+  onToggleFavorite?: (id: number) => void;
 }
 
-export default function PropertyList({ properties, isLoading, total, page, pages, onPageChange }: Props) {
+export default function PropertyList({
+  properties,
+  isLoading,
+  total,
+  page,
+  pages,
+  onPageChange,
+  avgPrices,
+  favoriteIds = [],
+  onToggleFavorite,
+}: Props) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -52,7 +65,16 @@ export default function PropertyList({ properties, isLoading, total, page, pages
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {properties.map((property) => (
-          <PropertyCard key={property.id} property={property} />
+          <PropertyCard
+            key={property.id}
+            property={property}
+            avgPriceM2={property.city ? (
+              avgPrices?.[property.city]
+              ?? avgPrices?.[`${property.city}|${property.transaction_type}`]
+            ) : undefined}
+            isFavorite={favoriteIds.includes(property.id)}
+            onToggleFavorite={onToggleFavorite}
+          />
         ))}
       </div>
 

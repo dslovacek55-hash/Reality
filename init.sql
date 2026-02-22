@@ -1,8 +1,11 @@
 -- Czech Real Estate Tracker — Database Schema
 
+-- Enable PostGIS extension
+CREATE EXTENSION IF NOT EXISTS postgis;
+
 CREATE TABLE IF NOT EXISTS properties (
     id BIGSERIAL PRIMARY KEY,
-    source VARCHAR(50) NOT NULL,           -- 'sreality', 'bazos', 'bezrealitky'
+    source VARCHAR(50) NOT NULL,           -- 'sreality', 'bezrealitky', 'idnes'
     external_id VARCHAR(100) NOT NULL,
     url TEXT,
     title TEXT,
@@ -16,6 +19,8 @@ CREATE TABLE IF NOT EXISTS properties (
     rooms INTEGER,
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
+    ku_kod INTEGER,
+    ku_nazev VARCHAR(200),
     city VARCHAR(200),
     district VARCHAR(200),
     address TEXT,
@@ -28,6 +33,7 @@ CREATE TABLE IF NOT EXISTS properties (
     last_seen_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
+    search_vector TSVECTOR,
     CONSTRAINT uq_source_external UNIQUE (source, external_id)
 );
 
@@ -166,3 +172,102 @@ CREATE INDEX IF NOT EXISTS idx_user_filters_chat
 
 CREATE INDEX IF NOT EXISTS idx_notifications_property
     ON notifications (property_id, notification_type);
+
+-- Full-text search: generated column + GIN index
+CREATE OR REPLACE FUNCTION properties_search_vector_update()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.search_vector :=
+        setweight(to_tsvector('simple', COALESCE(NEW.title, '')), 'A') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.city, '')), 'A') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.district, '')), 'B') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.address, '')), 'B') ||
+        setweight(to_tsvector('simple', COALESCE(NEW.description, '')), 'C');
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_search_vector
+    BEFORE INSERT OR UPDATE OF title, city, district, address, description
+    ON properties
+    FOR EACH ROW
+    EXECUTE FUNCTION properties_search_vector_update();
+
+CREATE INDEX IF NOT EXISTS idx_properties_search
+    ON properties USING GIN (search_vector);
+
+-- Favorites table
+CREATE TABLE IF NOT EXISTS favorites (
+    id BIGSERIAL PRIMARY KEY,
+    session_id VARCHAR(100) NOT NULL,       -- anonymous browser session or user id
+    property_id BIGINT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_favorite UNIQUE (session_id, property_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_favorites_session
+    ON favorites (session_id);
+
+-- Email subscriptions table
+CREATE TABLE IF NOT EXISTS email_subscriptions (
+    id BIGSERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    property_type VARCHAR(30),
+    transaction_type VARCHAR(20),
+    city VARCHAR(200),
+    disposition TEXT,
+    price_min NUMERIC(14, 2),
+    price_max NUMERIC(14, 2),
+    size_min NUMERIC(10, 2),
+    size_max NUMERIC(10, 2),
+    notify_new BOOLEAN DEFAULT TRUE,
+    notify_price_drop BOOLEAN DEFAULT TRUE,
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_subscriptions_email
+    ON email_subscriptions (email)
+    WHERE active = TRUE;
+
+-- KÚ index on properties
+CREATE INDEX IF NOT EXISTS idx_properties_ku
+    ON properties (ku_kod)
+    WHERE ku_kod IS NOT NULL;
+
+-- Prague KÚ polygon boundaries
+CREATE TABLE IF NOT EXISTS prague_ku (
+    id SERIAL PRIMARY KEY,
+    ku_kod INTEGER NOT NULL UNIQUE,
+    ku_nazev VARCHAR(200) NOT NULL,
+    geom GEOMETRY(MultiPolygon, 4326) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_prague_ku_geom ON prague_ku USING GIST (geom);
+
+-- Computed price stats per KÚ
+CREATE TABLE IF NOT EXISTS ku_price_stats (
+    id SERIAL PRIMARY KEY,
+    ku_kod INTEGER NOT NULL,
+    ku_nazev VARCHAR(200) NOT NULL,
+    property_type VARCHAR(30),
+    transaction_type VARCHAR(20) NOT NULL,
+    median_price_m2 NUMERIC(14, 2),
+    avg_price_m2 NUMERIC(14, 2),
+    sample_count INTEGER DEFAULT 0,
+    computed_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_ku_price_stats UNIQUE (ku_kod, property_type, transaction_type)
+);
+
+-- Shared external reference benchmarks table
+CREATE TABLE IF NOT EXISTS reference_benchmarks (
+    id SERIAL PRIMARY KEY,
+    source VARCHAR(50) NOT NULL,
+    region VARCHAR(200) NOT NULL,
+    property_type VARCHAR(30),
+    transaction_type VARCHAR(20),
+    price_m2 NUMERIC(14, 2),
+    period VARCHAR(20),
+    fetched_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_ref_benchmark UNIQUE (source, region, property_type, transaction_type, period)
+);

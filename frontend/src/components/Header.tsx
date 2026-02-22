@@ -12,7 +12,7 @@ export default function Header() {
               </svg>
             </div>
             <h1 className="text-xl font-bold text-gray-900">Reality Tracker</h1>
-            <span className="text-xs text-gray-400 hidden sm:inline">Sreality + Bazos + Bezrealitky</span>
+            <span className="text-xs text-gray-400 hidden sm:inline">Sreality + Bezrealitky + iDNES</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">

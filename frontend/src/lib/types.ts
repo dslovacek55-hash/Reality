@@ -68,6 +68,7 @@ export interface MapMarker {
 
 export interface CityCount {
   city: string;
+  label: string;
   count: number;
 }
 
@@ -87,3 +88,16 @@ export interface PropertyFilters {
   page?: number;
   per_page?: number;
 }
+
+export interface AvgPriceM2 {
+  avg_price_m2: number;
+  count: number;
+  czso_price_m2?: number;
+  czso_region?: string;
+  by_disposition?: {
+    avg_price_m2: number;
+    count: number;
+  };
+}
+
+export type AvgPriceM2Map = Record<string, AvgPriceM2>;

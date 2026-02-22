@@ -121,7 +121,7 @@ async def set_disposition(callback: CallbackQuery, state: FSMContext):
 async def confirm_filter(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     data = await state.get_data()
 
-    from bot.main import UserFilter
+    from bot.models import UserFilter
     uf = UserFilter(
         telegram_chat_id=callback.from_user.id,
         name=f"Filtr {data.get('city', 'CZ')}",
@@ -169,7 +169,7 @@ async def cb_my_filters(callback: CallbackQuery, db: AsyncSession):
 
 
 async def show_filters(message: Message, db: AsyncSession, chat_id: int, edit: bool = False):
-    from bot.main import UserFilter
+    from bot.models import UserFilter
     query = select(UserFilter).where(UserFilter.telegram_chat_id == chat_id)
     result = await db.execute(query)
     filters = result.scalars().all()
@@ -198,7 +198,7 @@ async def show_filters(message: Message, db: AsyncSession, chat_id: int, edit: b
 @router.callback_query(F.data.startswith("del_filter_"))
 async def delete_filter(callback: CallbackQuery, db: AsyncSession):
     filter_id = int(callback.data.replace("del_filter_", ""))
-    from bot.main import UserFilter
+    from bot.models import UserFilter
     query = select(UserFilter).where(
         UserFilter.id == filter_id,
         UserFilter.telegram_chat_id == callback.from_user.id,
@@ -215,7 +215,7 @@ async def delete_filter(callback: CallbackQuery, db: AsyncSession):
 @router.callback_query(F.data.startswith("toggle_filter_"))
 async def toggle_filter(callback: CallbackQuery, db: AsyncSession):
     filter_id = int(callback.data.replace("toggle_filter_", ""))
-    from bot.main import UserFilter
+    from bot.models import UserFilter
     query = select(UserFilter).where(
         UserFilter.id == filter_id,
         UserFilter.telegram_chat_id == callback.from_user.id,

@@ -5,36 +5,52 @@ from scrapers.base import BaseScraper
 
 logger = logging.getLogger(__name__)
 
-GRAPHQL_URL = "https://www.bezrealitky.cz/api/graphql"
+GRAPHQL_URL = "https://api.bezrealitky.cz/graphql/"
 
 SEARCH_QUERY = """
-query ListAdverts($input: AdvertListInput!) {
-  listAdverts(input: $input) {
+query ListAdverts(
+  $offerType: [OfferType],
+  $estateType: [EstateType],
+  $limit: Int,
+  $offset: Int,
+  $order: ResultOrder,
+  $currency: Currency
+) {
+  listAdverts(
+    offerType: $offerType,
+    estateType: $estateType,
+    limit: $limit,
+    offset: $offset,
+    order: $order,
+    currency: $currency
+  ) {
     list {
       id
       uri
-      title
-      description
-      mainImage
-      images
-      price
-      currency
-      surface
-      disposition
       offerType
       estateType
-      address {
-        city
-        cityPart
-        street
-        lat
-        lng
-      }
+      disposition
+      price
+      charges
+      currency
+      surface
+      address(locale: CS)
+      gps { lat lng }
+      mainImage { url(filter: RECORD_MAIN) }
+      publicImages(limit: 5) { url(filter: RECORD_THUMB) }
     }
     totalCount
   }
 }
 """
+
+DISPOSITION_MAP = {
+    "DISP_1_KK": "1+kk", "DISP_1_1": "1+1",
+    "DISP_2_KK": "2+kk", "DISP_2_1": "2+1",
+    "DISP_3_KK": "3+kk", "DISP_3_1": "3+1",
+    "DISP_4_KK": "4+kk", "DISP_4_1": "4+1",
+    "DISP_5_KK": "5+kk", "DISP_5_1": "5+1",
+}
 
 
 class BezrealitkyScraper(BaseScraper):
@@ -56,36 +72,34 @@ class BezrealitkyScraper(BaseScraper):
         self, offer_type: str, estate_type: str
     ) -> list[dict]:
         listings = []
-        page = 1
-        per_page = 50
+        offset = 0
+        limit = 50
 
         while True:
             variables = {
-                "input": {
-                    "offerType": offer_type,
-                    "estateType": estate_type,
-                    "page": page,
-                    "limit": per_page,
-                    "order": "TIMEORDER_DESC",
-                }
+                "offerType": [offer_type],
+                "estateType": [estate_type],
+                "limit": limit,
+                "offset": offset,
+                "order": "TIMEORDER_DESC",
+                "currency": "CZK",
             }
 
             try:
-                resp = await self.client.post(
+                resp = await self.fetch_with_retry(
                     GRAPHQL_URL,
+                    method="POST",
                     json={"query": SEARCH_QUERY, "variables": variables},
                     headers={
                         "Content-Type": "application/json",
                         "Accept": "application/json",
-                        "Referer": "https://www.bezrealitky.cz/",
                     },
                 )
-                resp.raise_for_status()
                 data = resp.json()
             except Exception as e:
                 logger.error(
                     f"[bezrealitky] Error fetching {offer_type}/{estate_type} "
-                    f"page {page}: {e}"
+                    f"offset {offset}: {e}"
                 )
                 break
 
@@ -101,53 +115,63 @@ class BezrealitkyScraper(BaseScraper):
                 item["_estate_type"] = estate_type
                 listings.append(item)
 
-            fetched = page * per_page
-            if fetched >= total or fetched >= 500:
+            offset += limit
+            if offset >= total or offset >= 500:
                 break
 
-            page += 1
             await asyncio.sleep(2.0)
 
         return listings
 
     def parse_listing(self, raw: dict) -> dict:
         ad_id = str(raw.get("id", ""))
-        address = raw.get("address", {}) or {}
 
         # Map offer type
-        offer_type = raw.get("_offer_type", "PRODEJ")
+        offer_type = raw.get("_offer_type", raw.get("offerType", "PRODEJ"))
         transaction_type = "prodej" if offer_type == "PRODEJ" else "pronajem"
 
         # Map estate type
-        estate_type = raw.get("_estate_type", "BYT")
+        estate_type = raw.get("_estate_type", raw.get("estateType", "BYT"))
         property_type = "byt" if estate_type == "BYT" else "dum"
 
-        # Images
+        # Images — new structure uses nested objects
         images = []
         main_img = raw.get("mainImage")
-        if main_img:
+        if isinstance(main_img, dict):
+            url = main_img.get("url", "")
+            if url:
+                images.append(url)
+        elif isinstance(main_img, str) and main_img:
             images.append(main_img)
-        for img in (raw.get("images") or [])[:4]:
-            if isinstance(img, str):
+
+        for img in (raw.get("publicImages") or [])[:4]:
+            if isinstance(img, dict):
+                url = img.get("url", "")
+                if url:
+                    images.append(url)
+            elif isinstance(img, str) and img:
                 images.append(img)
-            elif isinstance(img, dict):
-                images.append(img.get("url", ""))
 
         # Disposition mapping
         disposition = raw.get("disposition", "")
-        disp_map = {
-            "DISP_1_KK": "1+kk", "DISP_1_1": "1+1",
-            "DISP_2_KK": "2+kk", "DISP_2_1": "2+1",
-            "DISP_3_KK": "3+kk", "DISP_3_1": "3+1",
-            "DISP_4_KK": "4+kk", "DISP_4_1": "4+1",
-            "DISP_5_KK": "5+kk", "DISP_5_1": "5+1",
-        }
-        disposition_normalized = disp_map.get(disposition, disposition)
+        disposition_normalized = DISPOSITION_MAP.get(disposition, disposition)
 
-        city = address.get("city", "")
-        district = address.get("cityPart", "")
-        street = address.get("street", "")
-        full_address = ", ".join(filter(None, [street, district, city]))
+        # Address — now a flat formatted string
+        address_str = raw.get("address", "") or ""
+        city = ""
+        district = ""
+        if address_str:
+            parts = [p.strip() for p in address_str.split(",")]
+            if len(parts) >= 2:
+                city = parts[-1]
+                district = parts[-2] if len(parts) >= 3 else ""
+            else:
+                city = parts[0]
+
+        # GPS — separate object now
+        gps = raw.get("gps") or {}
+        lat = gps.get("lat")
+        lng = gps.get("lng")
 
         uri = raw.get("uri", "")
         url = f"https://www.bezrealitky.cz/nemovitosti-byty-domy/{uri}" if uri else ""
@@ -155,19 +179,19 @@ class BezrealitkyScraper(BaseScraper):
         return {
             "external_id": ad_id,
             "url": url,
-            "title": raw.get("title", ""),
-            "description": raw.get("description", ""),
+            "title": address_str,
+            "description": "",
             "property_type": property_type,
             "transaction_type": transaction_type,
             "disposition": disposition_normalized,
             "price": raw.get("price"),
             "size_m2": raw.get("surface"),
             "rooms": None,
-            "latitude": address.get("lat"),
-            "longitude": address.get("lng"),
+            "latitude": lat,
+            "longitude": lng,
             "city": city,
             "district": district,
-            "address": full_address,
+            "address": address_str,
             "images": images,
             "raw_data": {"bezrealitky_id": ad_id, "uri": uri},
         }

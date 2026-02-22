@@ -2,7 +2,7 @@
 
 import useSWR from 'swr';
 import { fetcher } from '@/lib/api';
-import type { PropertyListResponse, Stats, MapMarker, CityCount, PropertyFilters } from '@/lib/types';
+import type { PropertyListResponse, Stats, MapMarker, CityCount, PropertyFilters, AvgPriceM2Map } from '@/lib/types';
 
 function buildQuery(filters: PropertyFilters): string {
   const params = new URLSearchParams();
@@ -54,4 +54,34 @@ export function useCities() {
   );
 
   return { cities: data || [], error, isLoading };
+}
+
+export function useAvgPriceM2(filters?: Partial<PropertyFilters>) {
+  const params = new URLSearchParams();
+  if (filters?.property_type) params.set('property_type', filters.property_type);
+  if (filters?.transaction_type) params.set('transaction_type', filters.transaction_type);
+  if (filters?.disposition) params.set('disposition', filters.disposition);
+  const qs = params.toString();
+
+  const { data, error, isLoading } = useSWR<AvgPriceM2Map>(
+    `/api/stats/avg-price-m2${qs ? `?${qs}` : ''}`,
+    fetcher,
+    {
+      refreshInterval: 300000,
+      shouldRetryOnError: false,
+      onError: () => {},
+    }
+  );
+
+  return { avgPrices: data || {}, error, isLoading };
+}
+
+export function useFavoriteIds(sessionId: string | null) {
+  const { data, error, isLoading, mutate } = useSWR<number[]>(
+    sessionId ? `/api/favorites/${sessionId}/ids` : null,
+    fetcher,
+    { refreshInterval: 60000, shouldRetryOnError: false }
+  );
+
+  return { favoriteIds: data || [], error, isLoading, mutate };
 }

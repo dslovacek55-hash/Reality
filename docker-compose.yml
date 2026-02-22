@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgis/postgis:16-3.5-alpine
     environment:
       POSTGRES_DB: realestate
       POSTGRES_USER: tracker
@@ -42,8 +40,8 @@ services:
       DATABASE_URL_SYNC: postgresql://tracker:${DB_PASSWORD:-changeme}@postgres:5432/realestate
       REDIS_URL: redis://redis:6379/0
       SREALITY_INTERVAL_MINUTES: ${SREALITY_INTERVAL_MINUTES:-30}
-      BAZOS_INTERVAL_MINUTES: ${BAZOS_INTERVAL_MINUTES:-60}
       BEZREALITKY_INTERVAL_MINUTES: ${BEZREALITKY_INTERVAL_MINUTES:-120}
+      IDNES_INTERVAL_MINUTES: ${IDNES_INTERVAL_MINUTES:-60}
     ports:
       - "127.0.0.1:8000:8000"
 
@@ -60,13 +58,16 @@ services:
       REDIS_URL: redis://redis:6379/0
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     depends_on:
       - backend
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
 
 volumes:
   postgres_data:

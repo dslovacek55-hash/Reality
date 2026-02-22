@@ -2,15 +2,10 @@
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { PriceHistoryEntry } from '@/lib/types';
+import { formatPriceShort } from '@/lib/utils';
 
 interface Props {
   history: PriceHistoryEntry[];
-}
-
-function formatPrice(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(0)}k`;
-  return value.toString();
 }
 
 export default function PriceChart({ history }: Props) {
@@ -38,7 +33,7 @@ export default function PriceChart({ history }: Props) {
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
           <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#9ca3af" />
-          <YAxis tickFormatter={formatPrice} tick={{ fontSize: 12 }} stroke="#9ca3af" width={60} />
+          <YAxis tickFormatter={formatPriceShort} tick={{ fontSize: 12 }} stroke="#9ca3af" width={60} />
           <Tooltip
             formatter={(value: number) => [
               new Intl.NumberFormat('cs-CZ').format(value) + ' CZK',
